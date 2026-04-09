@@ -1,0 +1,102 @@
+---
+title: "Analyses on population level: Recommendations for transfer (RecommForTransfer_yes1_no0) and clinical outcomes (ClinicalPregnancy_yes1_no0) as functions of EffectiveDivisionTime and MorphologyScore (NEQsiScore)"
+author: "Konstantin Popadin"
+date: "29/03/2026"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list=ls(all=TRUE))
+library(knitr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(Biostrings)
+library(IRanges)
+library(MASS)
+
+```
+<br>
+<br><br>
+
+## 1: READ META DATA FILE AND RUN POPULATION ANALYSES
+
+```{r}
+Data <- read.table(file = "/home/popadin/EffectiveDivisionTime/data/EmbryoMetaData.txt", header = TRUE)
+names(Data)
+
+########################################################################
+#### NRFT VS RFT on population level: RFT are faster
+########################################################################
+
+table(Data$RecommForTransfer_yes1_no0)
+summary(Data$EffectiveDivisionTime_hours)
+summary(Data[Data$RecommForTransfer_yes1_no0 == 0,]$EffectiveDivisionTime_hours)
+summary(Data[Data$RecommForTransfer_yes1_no0 == 1,]$EffectiveDivisionTime_hours) 
+
+wilcox.test(Data[Data$RecommForTransfer_yes1_no0 == 0,]$EffectiveDivisionTime_hours,Data[Data$RecommForTransfer_yes1_no0 == 1,]$EffectiveDivisionTime_hours)
+
+summary(glm(RecommForTransfer_yes1_no0 ~ scale(EffectiveDivisionTime_hours) + scale(MaternalAge_years) + scale(NEQsiScore), data = Data, family = binomial))
+
+
+########################################################################
+####   transferred embryos: implanted are faster than failed
+########################################################################
+
+table(Data$ClinicalPregnancy_yes1_no0)
+wilcox.test(
+  Data[!is.na(Data$ClinicalPregnancy_yes1_no0) & Data$ClinicalPregnancy_yes1_no0 == 0,]$EffectiveDivisionTime_hours,
+  Data[!is.na(Data$ClinicalPregnancy_yes1_no0) & Data$ClinicalPregnancy_yes1_no0 == 1,]$EffectiveDivisionTime_hours
+  ) 
+
+
+############################################################
+##$$  BINS (DECILES) => FAST/SLOW => FISHER TEST
+############################################################
+
+data_preg <- Data[!is.na(Data$ClinicalPregnancy_yes1_no0), ]
+table(data_preg$ClinicalPregnancy_yes1_no0)
+
+A = nrow(data_preg[data_preg$EffectiveDivisionTime_hours >= 18.7 & data_preg$ClinicalPregnancy_yes1_no0 == 1,]) # 122
+B = nrow(data_preg[data_preg$EffectiveDivisionTime_hours >= 18.7 & data_preg$ClinicalPregnancy_yes1_no0 == 0,]) # 132
+C = nrow(data_preg[data_preg$EffectiveDivisionTime_hours < 18.7 & data_preg$ClinicalPregnancy_yes1_no0 == 1,]) # 369
+D = nrow(data_preg[data_preg$EffectiveDivisionTime_hours < 18.7 & data_preg$ClinicalPregnancy_yes1_no0 == 0,]) # 220
+
+A+B+C+D # 843
+
+tab_fast_vs_slow <- matrix(
+  c(C, D, A, B),
+  nrow = 2,
+  byrow = TRUE,
+  dimnames = list(
+    "DevSpeed1" = c("<18.7 (fast)", ">=18.7 (slow)"),
+    "Pregnancy" = c("1", "0")))
+print(tab_fast_vs_slow)
+fisher.test(tab_fast_vs_slow)
+
+
+########  LOGISTIC MODELS
+
+summary(glm(ClinicalPregnancy_yes1_no0 ~ EffectiveDivisionTime_hours, data = data_preg, family = binomial))
+
+data_preg$DummyFast <- ifelse(data_preg$EffectiveDivisionTime_hours < 18.7, 1, 0)
+
+summary(glm(ClinicalPregnancy_yes1_no0 ~ DummyFast, data = data_preg, family = binomial))
+
+
+# whether Morphology of FAST and SLOW differs: yes, FAST have slightly higher mean NEQsiScore (Mann-Whitney U test), but in multiple logistic regression it is not significant
+
+wilcox.test(data_preg[data_preg$ClinicalPregnancy_yes1_no0 == 1,]$NEQsiScore,data_preg[data_preg$ClinicalPregnancy_yes1_no0 == 0,]$NEQsiScore)
+
+wilcox.test(data_preg[data_preg$DummyFast == 1,]$NEQsiScore,data_preg[data_preg$DummyFast == 0,]$NEQsiScore)
+
+summary(glm(ClinicalPregnancy_yes1_no0 ~ scale(DummyFast) + scale(NEQsiScore), data = data_preg, family = binomial))
+
+summary(glm(ClinicalPregnancy_yes1_no0 ~ scale(DummyFast) + scale(NEQsiScore) + scale(MaternalAge_years), data = data_preg, family = binomial))  
+
+```
+```
